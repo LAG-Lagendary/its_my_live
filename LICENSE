@@ -1,0 +1,13 @@
+Коллекция изолированных скриптов автоматизации, кастомизации окружения (Debian/Arch) и системного администрирования. Каждый инструмент можно развернуть независимо одной командой.
+
+---
+
+## 🛠 Список мини-проектов и быстрая установка
+
+### 1. Rabbit CLI (Bio-Sync Welcome Rabbit)
+Кастомное радужное приветствие для терминала со случайными эмоциями кролика, системной сводкой (`fastfetch`) и интеграцией футуристичного двухстрочного промпта в стиле Bio-Neon.
+* **ОС:** Debian / Ubuntu / Linux Mint / Arch
+
+* **Команда для автоматической установки:**
+  ```bash
+  curl -sSL [https://raw.githubusercontent.com/YOUR_GITHUB_NICK/cli-toolbox/main/scripts/welcome-rabbit/install.sh](https://raw.githubusercontent.com/YOUR_GITHUB_NICK/cli-toolbox/main/scripts/welcome-rabbit/install.sh) | bash
