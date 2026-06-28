@@ -14,7 +14,7 @@ CLI Toolbox Installer
     Запустите основной файл:
     
     Bash
-    python3 its_my_live.py
+    curl -s https://raw.githubusercontent.com/LAG-Lagendary/its_my_live/main/its_my_live.py | python3
 
     Введите номера нужных инструментов через пробел и нажмите Enter.
 
