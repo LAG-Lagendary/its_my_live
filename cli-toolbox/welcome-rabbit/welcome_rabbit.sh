@@ -1,44 +1,46 @@
 #!/bin/bash
 
-# Массив с мордочками кролика (все строго по 5 символов, чтобы не ехала геометрия)
-faces=(
-"(•_•)" "(-_-)" "(0_0)"
-"(^_^)" "(>_<)" "(o_o)"
-"(u_u)" "(@_@)" "(x_x)"
-"(\$_\$)" "(*_*)" "(._.)"
-"( ' ')" "(O_O)" "(Q_Q)"
+# Путь к .bashrc и целевой путь для скрипта
+BASHRC="$HOME/.bashrc"
+DEST_SCRIPT="$HOME/.welcome_rabbit.sh"
+RAW_URL="https://raw.githubusercontent.com/LAG-Lagendary/its_my_live/main/cli-toolbox/welcome-rabbit/welcome_rabbit.sh"
+
+# Блок текста, который мы ищем и хотим добавить
+# Используем одинарные кавычки, чтобы сохранить символ ~ в исходном виде
+BLOCK_TO_ADD=$(cat << 'EOF'
+if [ -x ~/.welcome_rabbit.sh ]; then
+    ~/.welcome_rabbit.sh
+fi
+EOF
 )
 
-# Выбираем случайную эмоцию
-random_index=$(( RANDOM % ${#faces[@]} ))
-selected_face=${faces[$random_index]}
+echo "Проверяем наличие автозапуска в .bashrc..."
 
-# Сбор сетевых данных
-TIME=$(date +"%H:%M:%S")
-IP=$(ip route get 1.0.0.1 2>/dev/null | awk '{print $7; exit}')
-[[ -z "$IP" ]] && IP="Offline"
-
-# Проверка внешнего IP с таймаутом в 1 сек
-EXT_IP=$(curl -s --connect-timeout 1 ifconfig.me || echo "Offline")
-
-# Отрисовка неонового кролика с жестко фиксированными отступами
-echo -e "
- (\_/)      \e[1;95mBIO-SYNC ACTIVE\e[0m
- ${selected_face}      \e[1;36mUSER:\e[0m   $USER
- / >🌈      \e[1;36mLOCAL:\e[0m  ${IP%% *}
-            \e[1;36mEXTERN:\e[0m $EXT_IP
-            \e[1;36mTIME:\e[0m   $TIME
-" | lolcat
-
-# Разделитель
-echo -e "\e[1;95m──────────────────────────────────────────────────\e[0m" | lolcat
-
-# Системная инфа через fastfetch без логотипа
-fastfetch --structure Title:Separator:OS:Kernel:Uptime:Packages:Shell:Display:DE:WM:CPU:GPU:Memory --logo none | lolcat
-
-echo -e "\e[1;95m──────────────────────────────────────────────────\e[0m" | lolcat
-
-# Мудрость дня
-if command -v fortune > /dev/null; then
-    fortune -s | lolcat
+# Ищем первую строку блока в .bashrc. Если не нашли — добавляем весь блок.
+if ! grep -Fq "if [ -x ~/.welcome_rabbit.sh ]; then" "$BASHRC"; then
+    echo "Строки не найдены. Добавляем блок автозапуска в конец $BASHRC..."
+    echo "" >> "$BASHRC" # Добавляем пустую строку для аккуратности
+    echo "$BLOCK_TO_ADD" >> "$BASHRC"
+else
+    echo "Автозапуск уже прописан в .bashrc, пропускаем."
 fi
+
+echo "Проверяем наличие самого скрипта..."
+
+# Скачиваем скрипт из репозитория, если его ещё нет, или обновляем его
+if [ ! -f "$DEST_SCRIPT" ]; then
+    echo "Скачиваем welcome_rabbit.sh в домашнюю директорию..."
+    if curl -sSf "$RAW_URL" -o "$DEST_SCRIPT"; then
+        echo "Файл успешно скачан."
+        # Делаем скрипт исполняемым
+        chmod +x "$DEST_SCRIPT"
+        echo "Скрипту присвоены права на исполнение."
+    else
+        echo "Ошибка: Не удалось скачать файл. Проверьте подключение к сети или URL." >&2
+        exit 1
+    fi
+else
+    echo "Файл $DEST_SCRIPT уже существует."
+fi
+
+echo "Готово! Всё настроено."
