@@ -1,157 +1,134 @@
 #!/usr/bin/env bash
-
-# Включение строгого режима обработки ошибок Bash (выход при любой ошибке, неинициализированной переменной)
+# Универсальный скрипт: RabbitMQ + Твой Маскот (Rabbit CLI)
 set -euo pipefail
-IFS=$'\n\t'
 
-# Константы приложения
-APP_NAME="its_my_live"
-INSTALL_DIR="/opt/${APP_NAME}"
-SYSTEMD_FILE="/etc/systemd/system/${APP_NAME}.service"
+APP_DIR="/opt/its_my_live"
+LOG_DIR="/var/log/its_my_live"
+CONF_DIR="/etc/its_my_live"
+RABBITMQ_USER="live_admin"
+RABBITMQ_PASS=$(openssl rand -hex 16)
 
-# Цветовое оформление вывода
-GREEN='\e[32m'
-RED='\e[31m'
-YELLOW='\e[33m'
-NC='\e[0m' # No Color
+# Определяем реального пользователя (не root), который запустил скрипт через sudo
+REAL_USER=${SUDO_USER:-$USER}
+REAL_USER_HOME=$(eval echo "~$REAL_USER")
 
-log_status() {
-    echo -e "${GREEN}[SYSTEM]${NC} $*"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARNING]${NC} $*"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $*" >&2
-}
-
-# 1. Проверка прав суперпользователя
 if [ "$EUID" -ne 0 ]; then
-    log_error "Скрипт установки должен быть запущен с правами суперпользователя root (например, через sudo)."
+    echo "Ошибка: Скрипт должен быть запущен от имени root (через sudo)." >&2
     exit 1
 fi
 
-# 2. Проверка операционной системы (совместимость с Debian/Ubuntu)
-if [ ! -f /etc/debian_version ]; then
-    log_error "Данный скрипт автоматической установки оптимизирован только под ОС семейства Debian!"
-    exit 1
-fi
-
-log_status "=========================================="
-log_status "   Автоматическая установка ${APP_NAME}"
-log_status "=========================================="
-
-# 3. Обновление репозиториев и установка системных утилит
-log_status "Шаг 1: Обновление пакетного менеджера и установка системных зависимостей..."
+echo "=== Шаг 1: Установка системных утилит и пакетов для Маскота ==="
 apt-get update -y
-apt-get install -y python3 python3-pip python3-venv curl gnupg apt-transport-https lsb-release
+# Добавляем fastfetch, fortune, lolcat, figlet для интерфейса кролика
+apt-get install -y curl gnupg apt-transport-https python3 python3-pip python3-venv openssl lsb-release fortune-mod lolcat fastfetch figlet
 
-# 4. Автоматическая установка RabbitMQ на Debian (Официальный метод через репозитории Cloudsmith)
-if ! systemctl is-active --quiet rabbitmq-server; then
-    log_status "Шаг 2: Установка брокера сообщений RabbitMQ..."
+DEBIAN_CODENAME=$(lsb_release -cs 2>/dev/null || grep -oP 'VERSION_CODENAME=\K\w+' /etc/os-release)
 
-    # Добавление GPG ключей подписи репозиториев Erlang и RabbitMQ
-    mkdir -p /etc/apt/keyrings
+echo "=== Шаг 2: Настройка репозиториев и установка RabbitMQ ==="
+rm -f /usr/share/keyrings/com.rabbitmq.team.gpg
+curl -1sLf "https://keys.openpgp.org/vks/v1/by-fingerprint/0A9AF2115F4687BD29803A206B73A36E6026DFCA" \
+    | gpg --dearmor | tee /usr/share/keyrings/com.rabbitmq.team.gpg > /dev/null
 
-    log_status "Импорт доверенных ключей подписи..."
-    curl -1sLf "https://keys.openpgp.org/vks/v1/by-fingerprint/0A9AF2115F4687F29837A0F3D4EE055B81136604" | gpg --dearmor --yes -o /etc/apt/keyrings/rabbitmq.Erlang.gpg
-    curl -1sLf "https://github.com/rabbitmq/signing-keys/releases/download/3.0/cloudsmith.rabbitmq.server.ASC" | gpg --dearmor --yes -o /etc/apt/keyrings/rabbitmq.server.gpg
-
-    # Определение кодового имени дистрибутива Debian (например, bookworm, bullseye)
-    DEB_CODENAME=$(lsb_release -cs 2>/dev/null || grep -oP '(?<=VERSION_CODENAME=)[a-z]+' /etc/os-release)
-
-    log_status "Подключение официального зеркала APT для Debian (${DEB_CODENAME})..."
-    cat <<EOF > /etc/apt/sources.list.d/rabbitmq.list
-deb [signed-by=/etc/apt/keyrings/rabbitmq.Erlang.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-erlang/deb/debian ${DEB_CODENAME} main
-deb-src [signed-by=/etc/apt/keyrings/rabbitmq.Erlang.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-erlang/deb/debian ${DEB_CODENAME} main
-
-deb [signed-by=/etc/apt/keyrings/rabbitmq.server.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-server/deb/debian ${DEB_CODENAME} main
-deb-src [signed-by=/etc/apt/keyrings/rabbitmq.server.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-server/deb/debian ${DEB_CODENAME} main
+tee /etc/apt/sources.list.d/rabbitmq.list <<EOF
+deb [arch=amd64 signed-by=/usr/share/keyrings/com.rabbitmq.team.gpg] https://deb2.rabbitmq.com/rabbitmq-erlang/ubuntu noble main
+deb [arch=amd64 signed-by=/usr/share/keyrings/com.rabbitmq.team.gpg] https://deb2.rabbitmq.com/rabbitmq-server/debian $DEBIAN_CODENAME main
 EOF
 
-    log_status "Обновление индекса пакетов и установка erlang и rabbitmq-server..."
-    apt-get update -y
-    apt-get install -y erlang-base rabbitmq-server
+apt-get update -y
+apt-get install -y erlang-base erlang-crypto erlang-ssl erlang-mnesia rabbitmq-server --fix-missing
 
-    log_status "Активация и запуск службы RabbitMQ..."
-    systemctl daemon-reload
-    systemctl enable rabbitmq-server
-    systemctl start rabbitmq-server
-else
-    log_status "Шаг 2: Служба RabbitMQ уже установлена и активна в системе. Пропускаем..."
+systemctl enable rabbitmq-server --now
+sleep 3
+rabbitmq-plugins enable rabbitmq_management
+
+if rabbitmqctl list_users | grep -q "$RABBITMQ_USER"; then
+    rabbitmqctl delete_user "$RABBITMQ_USER"
+fi
+rabbitmqctl add_user "$RABBITMQ_USER" "$RABBITMQ_PASS"
+rabbitmqctl set_user_tags "$RABBITMQ_USER" administrator
+rabbitmqctl set_permissions -p / "$RABBITMQ_USER" ".*" ".*" ".*"
+rabbitmqctl delete_user guest || true
+
+echo "=== Шаг 3: Развертывание Python-агента ==="
+mkdir -p "$APP_DIR" "$LOG_DIR" "$CONF_DIR"
+# (Предполагается, что agent.py лежит в той же папке, откуда запущен скрипт)
+[ -f agent.py ] && cp agent.py "$APP_DIR/agent.py" || touch "$APP_DIR/agent.py"
+chmod +x "$APP_DIR/agent.py"
+
+python3 -m venv "$APP_DIR/venv"
+"$APP_DIR/venv/bin/pip" install --upgrade pip
+"$APP_DIR/venv/bin/pip" install pika python-dotenv
+
+tee "$CONF_DIR/.env" <<EOF
+RABBITMQ_HOST=localhost
+RABBITMQ_USER=$RABBITMQ_USER
+RABBITMQ_PASS=$RABBITMQ_PASS
+QUEUE_NAME=live_tasks
+EOF
+chmod 600 "$CONF_DIR/.env"
+ln -sf "$CONF_DIR/.env" "$APP_DIR/.env"
+
+echo "=== Шаг 4: Развертывание Твоего Маскота (Rabbit CLI) ==="
+TARGET_SCRIPT="$REAL_USER_HOME/.welcome_rabbit.sh"
+
+tee "$TARGET_SCRIPT" <<'EOF'
+#!/bin/bash
+
+# Массив с разными мордочками (15 вариантов)
+faces=(
+" (•_•)" " (-_-)" " (0_0)"
+" (^_^)" " (>_<)" " (o_o)"
+" (u_u)" " (@ @)" " (x_x)"
+" (\$ \$)" " (*_*)" " (._.)"
+" (' ')" " (O_O)" " (Q_Q)"
+)
+
+# Выбираем случайный индекс
+random_index=$(( RANDOM % ${#faces[@]} ))
+selected_face=${faces[$random_index]}
+
+# Сбор данных
+TIME=$(date +"%H:%M:%S")
+IP=$(hostname -I | awk '{print $1}')
+EXT_IP=$(curl -s --connect-timeout 1 ifconfig.me || echo "Offline")
+
+# Отрисовка кролика Bio-Sync
+echo -e "
+(\\_/) \e[1;95mBIO-SYNC ACTIVE\e[0m
+${selected_face} \e[1;36mUSER:\e[0m $USER
+/ >  \e[1;36mLOCAL:\e[0m ${IP%% *}
+\e[1;36mEXTERN:\e[0m $EXT_IP
+\e[1;36mTIME:\e[0m $TIME
+\e[1;95m──────────────────────────────────────────────────\e[0m" | lolcat
+
+# Проверка fastfetch и вывод структуры
+if command -v fastfetch > /dev/null; then
+    fastfetch --structure Title:Separator:OS:Kernel:Uptime:Packages:Shell:DE:WM:CPU:Memory --logo none | lolcat
+    echo -e "\e[1;95m──────────────────────────────────────────────────\e[0m" | lolcat
 fi
 
-# 5. Развёртывание директории приложения и кода
-log_status "Шаг 3: Подготовка рабочей директории приложения в ${INSTALL_DIR}..."
-mkdir -p "${INSTALL_DIR}"
-
-if [ -f "${APP_NAME}.py" ]; then
-    cp "${APP_NAME}.py" "${INSTALL_DIR}/${APP_NAME}.py"
-    chmod +x "${INSTALL_DIR}/${APP_NAME}.py"
-else
-    log_error "Критическая ошибка: Файл ${APP_NAME}.py не найден в текущей директории!"
-    exit 1
+# Мудрость дня
+if command -v fortune > /dev/null; then
+    fortune -s | lolcat
 fi
-
-if [ -f "requirements.txt" ]; then
-    cp "requirements.txt" "${INSTALL_DIR}/requirements.txt"
-fi
-
-# 6. Создание изолированного Python Virtual Environment (venv)
-log_status "Шаг 4: Развертывание виртуального окружения python-venv..."
-python3 -m venv "${INSTALL_DIR}/venv"
-"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip
-
-if [ -f "${INSTALL_DIR}/requirements.txt" ]; then
-    log_status "Установка зависимостей Python из requirements.txt..."
-    "${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"
-fi
-
-# 7. Генерация и регистрация конфигурационного файла systemd-службы с ограничениями ресурсов
-log_status "Шаг 5: Регистрация системного демона systemd с лимитированием cgroups..."
-
-cat <<EOF > "${SYSTEMD_FILE}"
-[Unit]
-Description=Its My Live Service Daemon (LAG Security Framework)
-After=network.target rabbitmq-server.service
-Requires=rabbitmq-server.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/${APP_NAME}.py
-Restart=always
-RestartSec=10
-
-# Ограничения использования ресурсов (Защита стабильности Debian)
-CPUAccounting=true
-CPUQuota=15%
-MemoryAccounting=true
-MemoryMax=128M
-MemorySwapMax=0
-TasksMax=10
-
-# Логирование стандартного вывода в системный журнал journald
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
 EOF
 
-# 8. Финальный перезапуск служб и проверка статуса
-log_status "Шаг 6: Обновление конфигурации инициализации и запуск службы..."
-systemctl daemon-reload
-systemctl enable "${APP_NAME}.service"
-systemctl restart "${APP_NAME}.service"
+chmod +x "$TARGET_SCRIPT"
+chown "$REAL_USER:$REAL_USER" "$TARGET_SCRIPT"
 
-log_status "=========================================="
-log_status "   УСТАНОВКА УСПЕШНО ЗАВЕРШЕНА!"
-log_status "=========================================="
-log_status "Проверить статус службы:  systemctl status ${APP_NAME}.service"
-log_status "Посмотреть логи демона:   journalctl -u ${APP_NAME}.service -f"
-log_status "Контроль RabbitMQ:        rabbitmqctl status"
-log_status "=========================================="
+# Интеграция в .bashrc реального пользователя, если её там еще нет
+BASHRC="$REAL_USER_HOME/.bashrc"
+if ! grep -q "welcome_rabbit.sh" "$BASHRC"; then
+    tee -a "$BASHRC" <<EOF
+
+# === STYLE SETTINGS ===
+if [ -x ~/.welcome_rabbit.sh ]; then
+    ~/.welcome_rabbit.sh
+fi
+
+export PS1="\\[\\e[1;95m\\]┌──(\\[\\e[1;36m\\]\\u\\e[1;95m\\]🧬\\[\\e[1;36m\\]\\h\\e[1;95m\\])-[\\[\\e[1;32m\\]\\w\\e[1;95m\\]]\\n\\[\\e[1;95m\\]└─\\[\\e[1;32m\\]❯ \\[\\e[0m\\]"
+alias myip='curl ipinfo.io | lolcat'
+EOF
+fi
+
+echo "=== Все готово! Перезапусти терминал или выполни: source ~/.bashrc ==="
