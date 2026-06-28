@@ -1,46 +1,42 @@
 #!/bin/bash
 
-# Путь к .bashrc, целевое имя файла в home и его raw URL на GitHub
+# Настройки
+INSTALL_DIR="$HOME/.bash_aliases"
+SCRIPT_NAME="bash_aliases.sh"
+DEST_PATH="$INSTALL_DIR/$SCRIPT_NAME"
 BASHRC="$HOME/.bashrc"
-DEST_SCRIPT="$HOME/.bash_aliases.sh"
-RAW_URL="https://raw.githubusercontent.com/LAG-Lagendary/its_my_live/main/cli-toolbox/bash_aliases/bash_aliases.sh"
+RAW_URL="https://raw.githubusercontent.com/LAG-Lagendary/its_my_live/main/cli-toolbox/bash_aliases/$SCRIPT_NAME"
 
-# Блок текста, который мы ищем в .bashrc и добавляем при отсутствии
-BLOCK_TO_ADD=$(cat << 'EOF'
-if [ -f ~/.bash_aliases.sh ]; then
-    . ~/.bash_aliases.sh
+echo "=== Инициализация установки Rabbit CLI Tools ==="
+
+# 1. Создаем директорию для инструментов
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "Создаю директорию $INSTALL_DIR..."
+    mkdir -p "$INSTALL_DIR"
 fi
-EOF
-)
 
-echo "Проверяем наличие подключения .bash_aliases.sh в .bashrc..."
-
-# Проверяем по первой строчке условия.
-# Используем -F, чтобы символы [ ] не обрабатывались как регулярное выражение.
-if ! grep -Fq "if [ -f ~/.bash_aliases.sh ]; then" "$BASHRC"; then
-    echo "Строки подключения не найдены. Добавляем блок в конец $BASHRC..."
-    echo "" >> "$BASHRC" # Пустая строка для читаемости кода
-    echo "$BLOCK_TO_ADD" >> "$BASHRC"
+# 2. Скачиваем файл скрипта
+echo "Загрузка актуального $SCRIPT_NAME..."
+if curl -sSf "$RAW_URL" -o "$DEST_PATH"; then
+    chmod +x "$DEST_PATH"
+    echo "Файл успешно установлен в $DEST_PATH"
 else
-    echo "Файл .bash_aliases.sh уже подключается в .bashrc, пропускаем этот шаг."
+    echo "Ошибка: не удалось скачать скрипт. Проверьте сеть." >&2
+    exit 1
 fi
 
-echo "Проверяем наличие самого файла скрипта..."
+# 3. Интеграция в .bashrc
+# Проверяем, есть ли уже строка подключения
+HOOK="[ -f $DEST_PATH ] && . $DEST_PATH"
 
-# Скачиваем файл из репозитория, если его ещё нет
-if [ ! -f "$DEST_SCRIPT" ]; then
-    echo "Скачиваем bash_aliases.sh в домашнюю директорию как .bash_aliases.sh..."
-    if curl -sSf "$RAW_URL" -o "$DEST_SCRIPT"; then
-        echo "Файл успешно скачан."
-        # Делаем файл исполняемым (на всякий случай, хотя для source/. это не всегда строго обязательно)
-        chmod +x "$DEST_SCRIPT"
-        echo "Права на исполнение установлены."
-    else
-        echo "Ошибка: Не удалось скачать файл. Проверьте сеть или URL." >&2
-        exit 1
-    fi
+if ! grep -Fq "$HOOK" "$BASHRC"; then
+    echo "Добавляю хук в .bashrc..."
+    echo "" >> "$BASHRC"
+    echo "# Rabbit CLI integration" >> "$BASHRC"
+    echo "$HOOK" >> "$BASHRC"
 else
-    echo "Файл $DEST_SCRIPT уже существует в домашней директории."
+    echo "Хук уже присутствует в .bashrc."
 fi
 
-echo "Готово! Всё настроено."
+echo "=== Установка завершена ==="
+echo "Для применения изменений выполните: source ~/.bashrc"
