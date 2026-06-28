@@ -1,1 +1,1 @@
-There's nothing interesting here, just crypt files.
+There's nothing interesting here, just encrypted files.
