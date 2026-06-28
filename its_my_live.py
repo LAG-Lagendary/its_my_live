@@ -1,105 +1,104 @@
 #!/usr/bin/env python3
 import os
-import sys
-import time
-import logging
 import subprocess
-import pika
-from dotenv import load_dotenv
-
-# Настройка системного логирования в выделенный каталог
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("/var/log/its_my_live/agent.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-# Загрузка переменных окружения
-load_dotenv()
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
-QUEUE_NAME = os.getenv("QUEUE_NAME", "live_tasks")
-
-def execute_safe_command(command_payload):
-    """
-    Выполнение строго определенного перечня безопасных команд.
-    Исключает произвольное выполнение системного кода, предотвращая сбои ОС.
-    """
-    allowed_commands = {
-        "status": ["systemctl", "status", "rabbitmq-server"],
-        "disk": ["df", "-h"],
-        "memory": ["free", "-m"]
-    }
-
-    if command_payload not in allowed_commands:
-        logging.warning(f"Заблокирована попытка выполнения недопустимой команды: {command_payload}")
-        return "Ошибка: Команда отклонена политикой безопасности."
-
-    try:
-        result = subprocess.run(
-            allowed_commands[command_payload],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=10
-        )
-        return result.stdout if result.returncode == 0 else result.stderr
-    except subprocess.TimeoutExpired:
-        logging.error(f"Превышено время ожидания (timeout) для команды: {command_payload}")
-        return "Ошибка: Превышено время ожидания операции."
-    except Exception as e:
-        logging.error(f"Критический сбой выполнения: {str(e)}")
-        return f"Системная ошибка: {str(e)}"
-
-def message_callback(ch, method, properties, body):
-    """
-    Обработчик входящих сообщений из очереди.
-    """
-    try:
-        command = body.decode('utf-8')
-        logging.info(f"Получена системная задача: {command}")
-        response = execute_safe_command(command)
-        logging.info(f"Результат выполнения операции: {response.strip()}")
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    except Exception as e:
-        logging.error(f"Ошибка при обработке сообщения: {str(e)}")
-        ch.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
+import sys
 
 def main():
-    logging.info("Инициализация службы агента its_my_live...")
+    # Приветствие в вашем фирменном стиле
+    print("====================================================")
+    print("Сука, че хочешь поставить? Готовься, я готов работать!")
+    print("====================================================\n")
 
-    credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
-    connection_params = pika.ConnectionParameters(
-        host=RABBITMQ_HOST,
-        credentials=credentials,
-        heartbeat=600,
-        blocked_connection_timeout=300
-    )
+    # Определяем путь к папке с инструментами относительно корня проекта
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    toolbox_path = os.path.join(base_dir, "cli-toolbox")
 
-    while True:
+    # Проверяем, существует ли папка cli-toolbox
+    if not os.path.exists(toolbox_path):
+        print(f"❌ Ошибка: Папка {toolbox_path} не найдена!")
+        sys.exit(1)
+
+    # Сканируем папку и ищем только те подпапки, где есть install.sh
+    available_tools = []
+    try:
+        for entry in os.scandir(toolbox_path):
+            if entry.is_dir():
+                install_script = os.path.join(entry.path, "install.sh")
+                if os.path.exists(install_script):
+                    available_tools.append({
+                        "name": entry.name,
+                        "path": entry.path,
+                        "script": install_script
+                    })
+    except Exception as e:
+        print(f"❌ Не удалось прочитать директорию: {e}")
+        sys.exit(1)
+
+    # Если инструментов с install.sh не найдено
+    if not available_tools:
+        print("📭 В папке cli-toolbox не найдено инструментов с файлом install.sh.")
+        sys.exit(0)
+
+    # Сортируем для стабильного порядка вывода
+    available_tools.sort(key=lambda x: x["name"])
+
+    # Выводим список инструментов пользователю
+    print("Доступные инструменты для установки:")
+    for index, tool in enumerate(available_tools, start=1):
+        print(f"  [{index}] {tool['name']}")
+    print("")
+
+    # Запрашиваем ввод у пользователя
+    user_input = input("Введи номера через пробел (например, 1 3 4) и жми Enter: ").strip()
+
+    if not user_input:
+        print("Ничего не выбрано. Выходим.")
+        sys.exit(0)
+
+    # Парсим введенные номера
+    selected_indices = []
+    for num in user_input.split():
+        if num.isdigit():
+            idx = int(num) - 1
+            if 0 <= idx < len(available_tools):
+                selected_indices.append(idx)
+            else:
+                print(f"⚠️  Номер {num} вне диапазона и будет пропущен.")
+        else:
+            print(f"⚠️  '{num}' не является числом и будет пропущено.")
+
+    if not selected_indices:
+        print("❌ Нет валидных номеров для установки. Работа завершена.")
+        sys.exit(1)
+
+    # Удаляем дубликаты, если пользователь случайно ввел один номер дважды
+    selected_indices = list(dict.fromkeys(selected_indices))
+
+    print(f"\n Начинаем установку выбранных компонентов ({len(selected_indices)} шт.)...\n")
+
+    # Запуск скриптов установки
+    for idx in selected_indices:
+        tool = available_tools[idx]
+        print(f"⚙️  Установка: {tool['name']}...")
+
         try:
-            connection = pika.BlockingConnection(connection_params)
-            channel = connection.channel()
-            channel.queue_declare(queue=QUEUE_NAME, durable=True)
-            channel.basic_qos(prefetch_count=1)
-            channel.basic_consume(queue=QUEUE_NAME, on_message_callback=message_callback)
+            # Делаем install.sh исполняемым на всякий случай
+            os.chmod(tool["script"], 0o755)
 
-            logging.info("Соединение с RabbitMQ установлено. Ожидание задач...")
-            channel.start_consuming()
-
-        except pika.exceptions.AMQPConnectionError:
-            logging.warning("Сбой подключения к RabbitMQ. Повторная попытка через 10 секунд...")
-            time.sleep(10)
-        except KeyboardInterrupt:
-            logging.info("Работа агента завершена пользователем.")
-            break
+            # Запускаем install.sh.
+            # cwd=tool["path"] важно, чтобы скрипт выполнялся внутри своей папки
+            result = subprocess.run(
+                ["bash", "./install.sh"],
+                cwd=tool["path"],
+                check=True
+            )
+            print(f"✅ {tool['name']} успешно установлен!\n")
+        except subprocess.CalledProcessError:
+            print(f"❌ Ошибка при выполнении install.sh в {tool['name']}. Переходим к следующему.\n")
         except Exception as e:
-            logging.critical(f"Непредвиденная системная ошибка: {str(e)}")
-            time.sleep(5)
+            print(f"❌ Непредвиденная ошибка при запуске {tool['name']}: {e}\n")
+
+    print(" Всё, что мог — сделал. Работа окончена!")
 
 if __name__ == "__main__":
     main()
