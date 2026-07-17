@@ -1,46 +1,32 @@
 #!/bin/bash
 
-# Путь к .bashrc и целевой путь для скрипта
-BASHRC="$HOME/.bashrc"
-DEST_SCRIPT="$HOME/.welcome_rabbit.sh"
-RAW_URL="https://raw.githubusercontent.com/LAG-Lagendary/its_my_live/main/cli-toolbox/welcome-rabbit/welcome_rabbit.sh"
-
-# Блок текста, который мы ищем и хотим добавить
-# Используем одинарные кавычки, чтобы сохранить символ ~ в исходном виде
-BLOCK_TO_ADD=$(cat << 'EOF'
-if [ -x ~/.welcome_rabbit.sh ]; then
-    ~/.welcome_rabbit.sh
-fi
-EOF
+# Массив с 15 мордочками
+faces=(
+"(•_•)" "(-_-)" "(0_0)" "(^_^)" "(>_<)"
+"(o_o)" "(u_u)" "(@ @)" "(x_x)" "($ $)"
+"(*_*)" "(._.)" "(' ')" "(O_O)" "(Q_Q)"
 )
 
-echo "Проверяем наличие автозапуска в .bashrc..."
+# Выбор случайного элемента
+selected_face=${faces[$(( RANDOM % ${#faces[@]} ))]}
 
-# Ищем первую строку блока в .bashrc. Если не нашли — добавляем весь блок.
-if ! grep -Fq "if [ -x ~/.welcome_rabbit.sh ]; then" "$BASHRC"; then
-    echo "Строки не найдены. Добавляем блок автозапуска в конец $BASHRC..."
-    echo "" >> "$BASHRC" # Добавляем пустую строку для аккуратности
-    echo "$BLOCK_TO_ADD" >> "$BASHRC"
-else
-    echo "Автозапуск уже прописан в .bashrc, пропускаем."
+# Сбор данных с таймаутами
+TIME=$(date +"%H:%M:%S")
+IP=$(hostname -I | awk '{print $1}')
+# Используем короткий таймаут для определения внешнего IP
+EXT_IP=$(curl -s --connect-timeout 2 --max-time 3 ifconfig.me || echo "Offline")
+
+# Вывод информации
+cat <<EOF | lolcat
+(\_/)   BIO-SYNC ACTIVE
+$selected_face   USER:   $USER
+/ >🧬   LOCAL:  ${IP:-Unavailable}
+        EXTERN: $EXT_IP
+        TIME:   $TIME
+──────────────────────────────────────────────────
+EOF
+
+# Дополнительная случайная мудрость
+if command -v fortune > /dev/null; then
+    fortune -s | lolcat
 fi
-
-echo "Проверяем наличие самого скрипта..."
-
-# Скачиваем скрипт из репозитория, если его ещё нет, или обновляем его
-if [ ! -f "$DEST_SCRIPT" ]; then
-    echo "Скачиваем welcome_rabbit.sh в домашнюю директорию..."
-    if curl -sSf "$RAW_URL" -o "$DEST_SCRIPT"; then
-        echo "Файл успешно скачан."
-        # Делаем скрипт исполняемым
-        chmod +x "$DEST_SCRIPT"
-        echo "Скрипту присвоены права на исполнение."
-    else
-        echo "Ошибка: Не удалось скачать файл. Проверьте подключение к сети или URL." >&2
-        exit 1
-    fi
-else
-    echo "Файл $DEST_SCRIPT уже существует."
-fi
-
-echo "Готово! Всё настроено."
